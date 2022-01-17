@@ -131,20 +131,21 @@ void IPCAsyncThreadProc(THREAD *thread, void *param)
 
 	if (a->Ipc != NULL)
 	{
-		if (a->Param.IsL3Mode)
+//		if (a->Param.IsL3Mode)
+        if (a->Param.DisableDhcp == false)
 		{
 			DHCP_OPTION_LIST cao;
 
 			Zero(&cao, sizeof(cao));
 
-			// Get an IP address from the DHCP server in the case of L3 mode
-			Debug("IPCDhcpAllocateIP() start...\n");
+            // Get an IP address from the DHCP server
+            Debug("IPCAsyncThreadProc(): DHCP operation in progress...\n");
 			if (IPCDhcpAllocateIP(a->Ipc, &cao, a->TubeForDisconnect))
 			{
 				UINT t;
 				IP ip, subnet, gw;
 
-				Debug("IPCDhcpAllocateIP() Ok.\n");
+                Debug("IPCAsyncThreadProc(): IPCDhcpAllocateIP() succeeded.\n");
 
 				// Calculate the DHCP update interval
 				t = cao.LeaseTime;
@@ -161,8 +162,10 @@ void IPCAsyncThreadProc(THREAD *thread, void *param)
 				}
 
 				// Save the options list
-				Copy(&a->L3ClientAddressOption, &cao, sizeof(DHCP_OPTION_LIST));
-				a->L3DhcpRenewInterval = (UINT64)t * (UINT64)1000;
+//				Copy(&a->L3ClientAddressOption, &cao, sizeof(DHCP_OPTION_LIST));
+//				a->L3DhcpRenewInterval = (UINT64)t * (UINT64)1000;
+                Copy(&a->DhcpOptionList, &cao, sizeof(DHCP_OPTION_LIST));
+                a->DhcpRenewInterval = t * 1000;
 
 				// Set the obtained IP address parameters to the IPC virtual host
 				UINTToIP(&ip, cao.ClientAddress);
@@ -171,11 +174,12 @@ void IPCAsyncThreadProc(THREAD *thread, void *param)
 
 				IPCSetIPv4Parameters(a->Ipc, &ip, &subnet, &gw, &cao.ClasslessRoute);
 
-				a->L3NextDhcpRenewTick = Tick64() + a->L3DhcpRenewInterval;
+//				a->L3NextDhcpRenewTick = Tick64() + a->L3DhcpRenewInterval;
+                a->DhcpNextRenewTick = Tick64() + a->DhcpRenewInterval;
 			}
 			else
 			{
-				Debug("IPCDhcpAllocateIP() Error.\n");
+                Debug("IPCAsyncThreadProc(): IPCDhcpAllocateIP() failed.\n");
 
 				a->DhcpAllocFailed = true;
 

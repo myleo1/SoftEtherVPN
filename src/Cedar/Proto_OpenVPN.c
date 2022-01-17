@@ -1099,18 +1099,22 @@ void OvsBeginIPCAsyncConnectionIfEmpty(OPENVPN_SERVER *s, OPENVPN_SESSION *se, O
 			StrCpy(p.ClientHostname, sizeof(p.ClientHostname), EntryListStrValue(pi, "IV_HWADDR"));
 		}
 
+        // Check whether the client doesn't want DHCP
+        p.DisableDhcp = EntryListHasKey(pi, "UV_NO_DHCP");
+
 		FreeEntryList(pi);
 
-		if (se->Mode == OPENVPN_MODE_L3)
-		{
-			// L3 Mode
-			p.IsL3Mode = true;
-		}
-		else
-		{
-			// L2 Mode
-			p.BridgeMode = true;
-		}
+//		if (se->Mode == OPENVPN_MODE_L3)
+//		{
+//			// L3 Mode
+//			p.IsL3Mode = true;
+//		}
+//		else
+//		{
+//			// L2 Mode
+//			p.BridgeMode = true;
+//		}
+        p.BridgeMode = se->Mode == OPENVPN_MODE_L2;
 
 		if (IsEmptyStr(c->ClientKey.Username) || IsEmptyStr(c->ClientKey.Password))
 		{
@@ -2180,7 +2184,8 @@ void OvsFreeSession(OPENVPN_SESSION *se)
 			{
 				IP dhcp_ip;
 
-				UINTToIP(&dhcp_ip, se->IpcAsync->L3ClientAddressOption.ServerAddress);
+//				UINTToIP(&dhcp_ip, se->IpcAsync->L3ClientAddressOption.ServerAddress);
+                UINTToIP(&dhcp_ip, se->IpcAsync->DhcpOptionList.ServerAddress);
 
 				IPCDhcpFreeIP(se->Ipc, &dhcp_ip);
 				IPC_PROTO_SET_STATUS(se->Ipc, IPv6State, IPC_PROTO_STATUS_CLOSED);
@@ -2337,7 +2342,7 @@ void OvsRecvPacket(OPENVPN_SERVER *s, LIST *recv_packet_list, UINT protocol)
 							if (se->IpcAsync->Ipc != NULL)
 							{
 								char option_str[4096];
-								char l3_options[MAX_SIZE];
+                                char option[MAX_SIZE];
 
 								// Successful in VPN connection
 								Debug("OpenVPN Channel %u Established (new key).\n", j);
@@ -2349,11 +2354,13 @@ void OvsRecvPacket(OPENVPN_SERVER *s, LIST *recv_packet_list, UINT protocol)
 								       s->PingSendInterval / 1000,
 								       s->Timeout / 1000);
 
-								if (se->Mode == OPENVPN_MODE_L3)
+//								if (se->Mode == OPENVPN_MODE_L3)
+                                if (se->IpcAsync->Param.DisableDhcp == false)
 								{
 									// Add such as the IP address that was acquired from the DHCP server
 									// if the L3 mode to the option character string
-									DHCP_OPTION_LIST *cao = &se->IpcAsync->L3ClientAddressOption;
+//									DHCP_OPTION_LIST *cao = &se->IpcAsync->L3ClientAddressOption;
+                                    DHCP_OPTION_LIST *cao = &se->IpcAsync->DhcpOptionList;
 									char ip_client[64];
 									char ip_subnet_mask[64];
 									char ip_dns1[64];
@@ -2374,22 +2381,22 @@ void OvsRecvPacket(OPENVPN_SERVER *s, LIST *recv_packet_list, UINT protocol)
 									IPToStr32(ip_subnet_mask, sizeof(ip_subnet_mask),
 									          cao->SubnetMask);
 
-									Format(l3_options, sizeof(l3_options),
+                                    Format(option, sizeof(option),
 									       ",topology subnet");
-									StrCat(option_str, sizeof(option_str), l3_options);
+                                    StrCat(option_str, sizeof(option_str), option);
 
-									Format(l3_options, sizeof(l3_options),
+                                    Format(option, sizeof(option),
 									       ",ifconfig %s %s",
 									       ip_client,
 									       ip_subnet_mask);
-									StrCat(option_str, sizeof(option_str), l3_options);
+                                    StrCat(option_str, sizeof(option_str), option);
 
 									// Domain name
 									if (IsEmptyStr(cao->DomainName) == false)
 									{
-										Format(l3_options, sizeof(l3_options),
+                                        Format(option, sizeof(option),
 										       ",dhcp-option DOMAIN %s", cao->DomainName);
-										StrCat(option_str, sizeof(option_str), l3_options);
+                                        StrCat(option_str, sizeof(option_str), option);
 									}
 
 									// DNS server address 1
@@ -2397,9 +2404,9 @@ void OvsRecvPacket(OPENVPN_SERVER *s, LIST *recv_packet_list, UINT protocol)
 									{
 										char ip_str[64];
 										IPToStr32(ip_str, sizeof(ip_str), cao->DnsServer);
-										Format(l3_options, sizeof(l3_options),
+                                        Format(option, sizeof(option),
 										       ",dhcp-option DNS %s", ip_str);
-										StrCat(option_str, sizeof(option_str), l3_options);
+                                        StrCat(option_str, sizeof(option_str), option);
 
 										StrCpy(ip_dns1, sizeof(ip_dns1), ip_str);
 									}
@@ -2409,9 +2416,9 @@ void OvsRecvPacket(OPENVPN_SERVER *s, LIST *recv_packet_list, UINT protocol)
 									{
 										char ip_str[64];
 										IPToStr32(ip_str, sizeof(ip_str), cao->DnsServer2);
-										Format(l3_options, sizeof(l3_options),
+                                        Format(option, sizeof(option),
 										       ",dhcp-option DNS %s", ip_str);
-										StrCat(option_str, sizeof(option_str), l3_options);
+                                        StrCat(option_str, sizeof(option_str), option);
 
 										StrCpy(ip_dns2, sizeof(ip_dns2), ip_str);
 									}
@@ -2421,9 +2428,9 @@ void OvsRecvPacket(OPENVPN_SERVER *s, LIST *recv_packet_list, UINT protocol)
 									{
 										char ip_str[64];
 										IPToStr32(ip_str, sizeof(ip_str), cao->WinsServer);
-										Format(l3_options, sizeof(l3_options),
+                                        Format(option, sizeof(option),
 										       ",dhcp-option WINS %s", ip_str);
-										StrCat(option_str, sizeof(option_str), l3_options);
+                                        StrCat(option_str, sizeof(option_str), option);
 
 										StrCpy(ip_wins1, sizeof(ip_wins1), ip_str);
 									}
@@ -2433,9 +2440,9 @@ void OvsRecvPacket(OPENVPN_SERVER *s, LIST *recv_packet_list, UINT protocol)
 									{
 										char ip_str[64];
 										IPToStr32(ip_str, sizeof(ip_str), cao->WinsServer2);
-										Format(l3_options, sizeof(l3_options),
+                                        Format(option, sizeof(option),
 										       ",dhcp-option WINS %s", ip_str);
-										StrCat(option_str, sizeof(option_str), l3_options);
+                                        StrCat(option_str, sizeof(option_str), option);
 
 										StrCpy(ip_wins2, sizeof(ip_wins2), ip_str);
 									}
@@ -2445,9 +2452,9 @@ void OvsRecvPacket(OPENVPN_SERVER *s, LIST *recv_packet_list, UINT protocol)
 									{
 										char ip_str[64];
 										IPToStr32(ip_str, sizeof(ip_str), cao->Gateway);
-										Format(l3_options, sizeof(l3_options),
+                                        Format(option, sizeof(option),
 										       ",route-gateway %s,redirect-gateway def1", ip_str);
-										StrCat(option_str, sizeof(option_str), l3_options);
+                                        StrCat(option_str, sizeof(option_str), option);
 
 										StrCpy(ip_defgw, sizeof(ip_defgw), ip_str);
 									}
@@ -2466,12 +2473,12 @@ void OvsRecvPacket(OPENVPN_SERVER *s, LIST *recv_packet_list, UINT protocol)
 										Zero(&local_network, sizeof(IP));
 										IPAnd4(&local_network, &client_ip, &subnet_mask);
 
-										Format(l3_options, sizeof(l3_options),
+										Format(option, sizeof(option),
 										       ",route %r %r vpn_gateway",
 										       &local_network,
 										       &cao->SubnetMask);
 
-										StrCat(option_str, sizeof(option_str), l3_options);
+										StrCat(option_str, sizeof(option_str), option);
 #endif
 									}
 
@@ -2485,11 +2492,11 @@ void OvsRecvPacket(OPENVPN_SERVER *s, LIST *recv_packet_list, UINT protocol)
 
 											if (r->Exists)
 											{
-												Format(l3_options, sizeof(l3_options),
+												Format(option, sizeof(option),
 												       ",route %r %r vpn_gateway",
 												       &r->Network, &r->SubnetMask);
 
-												StrCat(option_str, sizeof(option_str), l3_options);
+												StrCat(option_str, sizeof(option_str), option);
 											}
 										}
 									}
@@ -2497,8 +2504,8 @@ void OvsRecvPacket(OPENVPN_SERVER *s, LIST *recv_packet_list, UINT protocol)
 									OvsLog(s, se, c, "LP_SET_IPV4_PARAM",
 									       ip_client, ip_subnet_mask, ip_defgw, ip_dns1, ip_dns2, ip_wins1, ip_wins2);
 								}
-								else
-								{
+                                else if (se->Mode == OPENVPN_MODE_L2)
+                                {
 									// OpenVPN L2 mode. To fix the bug of OpenVPN 2.4.6 and particular version of kernel mode TAP driver
 									// on Linux, the TAP device must be up after the OpenVPN client is connected.
 									// However there is no direct push instruction to do so to OpenVPN client.
@@ -2661,30 +2668,29 @@ void OvsRecvPacket(OPENVPN_SERVER *s, LIST *recv_packet_list, UINT protocol)
 			}
 		}
 
-		if (se->Ipc != NULL)
-		{
-			if (se->Mode == OPENVPN_MODE_L3)
-			{
-				if (se->IpcAsync != NULL)
-				{
-					// Update DHCP address
-					if (se->IpcAsync->L3NextDhcpRenewTick <= s->Now)
-					{
-						IP ip;
+        if (se->Ipc != NULL)
+        {
+            if (se->IpcAsync != NULL && se->IpcAsync->Param.DisableDhcp == false)
+            {
+                if (se->IpcAsync->DhcpNextRenewTick <= s->Now)
+                {
+                    // Update DHCP address
+                    IP ip;
+                    UINTToIP(&ip, se->IpcAsync->DhcpOptionList.ServerAddress);
 
-						se->IpcAsync->L3NextDhcpRenewTick = s->Now + se->IpcAsync->L3DhcpRenewInterval;
+                    se->IpcAsync->DhcpNextRenewTick = s->Now + se->IpcAsync->DhcpRenewInterval;
 
-						UINTToIP(&ip, se->IpcAsync->L3ClientAddressOption.ServerAddress);
+                    IPCDhcpRenewIP(se->Ipc, &ip);
+                }
+            }
 
-						IPCDhcpRenewIP(se->Ipc, &ip);
-					}
-				}
+            if (se->Mode == OPENVPN_MODE_L3)
+            {
+                IPCProcessL3Events(se->Ipc);
+            }
 
-				IPCProcessL3EventsIPv4Only(se->Ipc);
-			}
-
-			IPCProcessInterrupts(se->Ipc);
-		}
+            IPCProcessInterrupts(se->Ipc);
+        }
 
 		// Choose the latest channel in all established channels
 		for (j = 0; j < OPENVPN_NUM_CHANNELS; j++)
