@@ -14,7 +14,7 @@
 #include "Mayaqua/TcpIp.h"
 
 // Constants
-#define	IPC_ARP_LIFETIME				(3 * 60 * 1000)
+#define	IPC_ARP_LIFETIME				(60 * 60 * 1000)
 #define	IPC_ARP_GIVEUPTIME				(1 * 1000)
 #define	IPC_DHCP_TIMEOUT				(5 * 1000)
 #define	IPC_DHCP_MIN_LEASE				5
